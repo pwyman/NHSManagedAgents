@@ -1,0 +1,342 @@
+{
+  "name": "NHS Westshire ICB — FOI Web Form Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Freedom of Information Request — NHS Westshire ICB",
+        "formDescription": "Use this form to submit a Freedom of Information (FOI) request to NHS Westshire ICB. You have a legal right to request recorded information held by the ICB under the Freedom of Information Act 2000. We will respond within 20 working days.",
+        "responseMode": "onReceived",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Full Name",
+              "fieldType": "text",
+              "requiredField": true,
+              "fieldId": "full_name",
+              "placeholder": "Your full name"
+            },
+            {
+              "fieldLabel": "Email Address",
+              "fieldType": "email",
+              "requiredField": true,
+              "fieldId": "email_address",
+              "placeholder": "your.email@example.com"
+            },
+            {
+              "fieldLabel": "Organisation (if applicable)",
+              "fieldType": "text",
+              "requiredField": false,
+              "fieldId": "organisation",
+              "placeholder": "Leave blank if making a personal request"
+            },
+            {
+              "fieldLabel": "Your FOI Request",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "fieldId": "request_details",
+              "placeholder": "Please describe the information you are requesting in as much detail as possible. The more specific your request, the faster we can respond.",
+              "fieldOptions": {
+                "values": []
+              }
+            },
+            {
+              "fieldLabel": "Preferred Format",
+              "fieldType": "dropdown",
+              "requiredField": false,
+              "fieldId": "preferred_format",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Electronic (email/PDF)"
+                  },
+                  {
+                    "option": "Paper (post)"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Reference to Previous Request (if applicable)",
+              "fieldType": "text",
+              "requiredField": false,
+              "fieldId": "reference_to_previous",
+              "placeholder": "e.g. FOI-2025-0042 — leave blank if this is a new request"
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Submit FOI Request",
+          "respondWithOptions": {
+            "values": {
+              "respondWith": "text",
+              "responseText": "Thank you for submitting your Freedom of Information request to NHS Westshire ICB. We will acknowledge your request by email within 2 hours and respond within 20 working days (as required by the Freedom of Information Act 2000). Your case reference will be included in your acknowledgement email."
+            }
+          }
+        }
+      },
+      "id": "d6e7f8a9-b0c1-2345-defa-456789012345",
+      "name": "N8N Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [240, 300],
+      "webhookId": "foi-form-webhook-001"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Format the form submission as a standard FOI request\nconst form = $input.item.json;\n\n// Generate case reference\nconst year = new Date().getFullYear();\nconst randomNum = Math.floor(Math.random() * 9000) + 1000;\nconst caseRef = `FOI-${year}-${randomNum}`;\n\n// Get submission date\nconst receivedDate = new Date();\nconst receivedDateStr = receivedDate.toLocaleDateString('en-GB', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'\n});\n\n// Calculate 20-working-day deadline\nfunction addWorkingDays(startDate, days) {\n  let count = 0;\n  let current = new Date(startDate);\n  const bankHolidays = [\n    '2025-12-25', '2025-12-26', '2026-01-01', '2026-04-03', '2026-04-06',\n    '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28'\n  ];\n  while (count < days) {\n    current.setDate(current.getDate() + 1);\n    const dayOfWeek = current.getDay();\n    const dateStr = current.toISOString().split('T')[0];\n    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !bankHolidays.includes(dateStr)) {\n      count++;\n    }\n  }\n  return current;\n}\n\nconst deadlineDate = addWorkingDays(receivedDate, 20);\nconst deadlineDateStr = deadlineDate.toLocaleDateString('en-GB', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'\n});\n\n// Extract form fields\nconst senderName = form.full_name || form['Full Name'] || 'Unknown';\nconst senderEmail = form.email_address || form['Email Address'] || '';\nconst organisation = form.organisation || form['Organisation (if applicable)'] || '';\nconst requestDetails = form.request_details || form['Your FOI Request'] || '';\nconst preferredFormat = form.preferred_format || form['Preferred Format'] || 'Electronic (email/PDF)';\nconst previousRef = form.reference_to_previous || form['Reference to Previous Request (if applicable)'] || '';\n\n// Format as standard email-style body for consistent processing\nconst formattedBody = `FOI REQUEST SUBMITTED VIA WEB FORM\n\nSubmitted by: ${senderName}${organisation ? ' (' + organisation + ')' : ''}\nEmail: ${senderEmail}\nPreferred format: ${preferredFormat}\n${previousRef ? 'Reference to previous request: ' + previousRef : ''}\n\nREQUEST:\n${requestDetails}`;\n\nreturn [{\n  json: {\n    caseRef,\n    senderEmail,\n    senderName,\n    organisation,\n    subject: `FOI Request (Web Form) — ${requestDetails.substring(0, 80)}${requestDetails.length > 80 ? '...' : ''}`,\n    body: formattedBody,\n    requestDetails,\n    preferredFormat,\n    previousRef,\n    receivedDate: receivedDate.toISOString(),\n    receivedDateStr,\n    deadlineDate: deadlineDate.toISOString(),\n    deadlineDateStr,\n    source: 'WEB_FORM'\n  }\n}];"
+      },
+      "id": "e7f8a9b0-c1d2-3456-efab-567890123456",
+      "name": "Code: Format as FOI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "prompt-caching-2024-07-31"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{\n  JSON.stringify({\n    model: 'claude-sonnet-4-6',\n    max_tokens: 4000,\n    system: [\n      {\n        type: 'text',\n        text: 'You are the Freedom of Information & EIR Agent for NHS Westshire ICB (NHS Westshire Integrated Care Board, Westshire House, 12 Cathedral Quarter, Westminster-upon-Avon WS1 2AB). Process the incoming FOI web form request and produce a JSON response with: request_type (FOI/EIR/SAR/GENERAL/UNCLEAR), classification_confidence, summary, subject_matter, potential_exemptions (array), escalation_required (boolean), escalation_reason, requester_type, likely_held_by_icb, disclosure_decision (DISCLOSE/PARTIAL/REFUSE/NOT_HELD/REFER/TRANSFER), information_held, exemptions_applied (array of objects with section/description/type/public_interest_argument), draft_acknowledgement (full email text including case reference ' + $json.caseRef + ' and deadline ' + $json.deadlineDateStr + '), draft_response (full draft response letter for FOI Lead review), internal_notes. Respond ONLY with valid JSON.',\n        cache_control: { type: 'ephemeral' }\n      }\n    ],\n    messages: [\n      {\n        role: 'user',\n        content: 'FOI WEB FORM SUBMISSION\\n\\nCase Reference: ' + $json.caseRef + '\\nDate: ' + $json.receivedDateStr + '\\nDeadline: ' + $json.deadlineDateStr + '\\nName: ' + $json.senderName + '\\nEmail: ' + $json.senderEmail + (($json.organisation) ? '\\nOrganisation: ' + $json.organisation : '') + '\\nPreferred format: ' + $json.preferredFormat + '\\n\\nRequest:\\n' + $json.requestDetails\n      }\n    ]\n  })\n}}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "f8a9b0c1-d2e3-4567-fabc-678901234567",
+      "name": "HTTP Request: Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse the Claude API response for form submissions\nconst response = $input.item.json;\nconst prevData = $('Code: Format as FOI Request').item.json;\n\nlet responseText = '';\nif (response.content && response.content[0] && response.content[0].text) {\n  responseText = response.content[0].text;\n} else {\n  throw new Error('Unexpected API response: ' + JSON.stringify(response));\n}\n\nlet analysis;\ntry {\n  const jsonMatch = responseText.match(/```json\\s*([\\s\\S]*?)\\s*```/) ||\n                    responseText.match(/```\\s*([\\s\\S]*?)\\s*```/);\n  const jsonStr = jsonMatch ? jsonMatch[1] : responseText;\n  analysis = JSON.parse(jsonStr.trim());\n} catch (e) {\n  // Fallback acknowledgement\n  const fallbackAck = `Dear ${prevData.senderName},\n\nThank you for your Freedom of Information request submitted via our online form.\n\nWe have registered your request with case reference ${prevData.caseRef}.\n\nWe will respond within 20 working days, by ${prevData.deadlineDateStr}.\n\nIf you have any queries, please contact us at foi@westshire.icb.nhs.uk quoting your case reference.\n\nFreedom of Information Team\nNHS Westshire Integrated Care Board\nWestshire House, 12 Cathedral Quarter, Westminster-upon-Avon WS1 2AB\nfoi@westshire.icb.nhs.uk`;\n\n  analysis = {\n    request_type: 'UNCLEAR',\n    disclosure_decision: 'PENDING_MANUAL_REVIEW',\n    draft_acknowledgement: fallbackAck,\n    draft_response: 'MANUAL REVIEW REQUIRED.',\n    internal_notes: `Form submission parsing failed. Raw: ${responseText.substring(0, 500)}`,\n    escalation_required: true,\n    potential_exemptions: []\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    analysis,\n    claudeUsage: response.usage || {}\n  }\n}];"
+      },
+      "id": "a9b0c1d2-e3f4-5678-abcd-789012345678",
+      "name": "Code: Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "toEmail": "={{ $json.senderEmail }}",
+        "subject": "Your FOI request — Case Reference {{ $json.caseRef }} — NHS Westshire ICB",
+        "emailFormat": "text",
+        "text": "={{ $json.analysis.draft_acknowledgement }}",
+        "options": {
+          "replyTo": "foi@westshire.icb.nhs.uk"
+        }
+      },
+      "id": "b0c1d2e3-f4a5-6789-bcde-890123456789",
+      "name": "Send Confirmation to Requester",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [1040, 300],
+      "credentials": {
+        "smtp": {
+          "id": "nhs-smtp",
+          "name": "NHS.net SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "toEmail": "={{ $env.FOI_REVIEWER_EMAIL }}",
+        "subject": "[FOI FORM SUBMISSION] {{ $json.caseRef }} — {{ $json.analysis.request_type || 'UNKNOWN' }}: {{ $json.analysis.subject_matter || $json.subject }} — Deadline: {{ $json.deadlineDateStr }}",
+        "emailFormat": "text",
+        "text": "=FOI WEB FORM SUBMISSION — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nSource: WEB FORM\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.analysis.request_type || 'UNCLEAR' }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision || 'PENDING' }}\n\nREQUESTER:\nName: {{ $json.senderName }}\nEmail: {{ $json.senderEmail }}\n{{ $json.organisation ? 'Organisation: ' + $json.organisation : '' }}\nPreferred format: {{ $json.preferredFormat }}\n\nREQUEST DETAILS:\n{{ $json.requestDetails }}\n\nCLASSIFICATION:\n{{ $json.analysis.summary || $json.analysis.request_type }}\n\nESCALATION REQUIRED: {{ $json.analysis.escalation_required ? 'YES' : 'NO' }}\n{{ $json.analysis.escalation_reason ? 'REASON: ' + $json.analysis.escalation_reason : '' }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nConfirmation email has been sent to requester.\n============================================",
+        "options": {
+          "replyTo": "foi@westshire.icb.nhs.uk"
+        }
+      },
+      "id": "c1d2e3f4-a5b6-7890-cdef-901234567890",
+      "name": "Send to Reviewer",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [1240, 300],
+      "credentials": {
+        "smtp": {
+          "id": "nhs-smtp",
+          "name": "NHS.net SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "FOI Case Register",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Case Reference": "={{ $json.caseRef }}",
+            "Date Received": "={{ $json.receivedDateStr }}",
+            "Requester Name": "={{ $json.senderName }}",
+            "Requester Email": "={{ $json.senderEmail }}",
+            "Organisation": "={{ $json.organisation }}",
+            "Subject": "={{ $json.subject }}",
+            "Request Type": "={{ $json.analysis.request_type || 'UNCLEAR' }}",
+            "Subject Matter": "={{ $json.analysis.subject_matter || '' }}",
+            "Deadline": "={{ $json.deadlineDateStr }}",
+            "Draft Decision": "={{ $json.analysis.disclosure_decision || 'PENDING' }}",
+            "Escalation Required": "={{ $json.analysis.escalation_required ? 'YES' : 'NO' }}",
+            "Status": "PENDING_REVIEW",
+            "Source": "WEB_FORM",
+            "Logged At": "={{ new Date().toLocaleDateString('en-GB') }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        }
+      },
+      "id": "d2e3f4a5-b6c7-8901-defa-012345678901",
+      "name": "Google Sheets: Log Case",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1440, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "N8N Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code: Format as FOI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Format as FOI Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request: Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request: Claude API": {
+      "main": [
+        [
+          {
+            "node": "Code: Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation to Requester",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation to Requester": {
+      "main": [
+        [
+          {
+            "node": "Send to Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets: Log Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Europe/London"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "westshire-icb-foi-agent"
+  },
+  "id": "foi-form-workflow-001",
+  "tags": [
+    {
+      "createdAt": "2026-05-14T09:00:00.000Z",
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "id": "tag-foi",
+      "name": "FOI"
+    },
+    {
+      "createdAt": "2026-05-14T09:00:00.000Z",
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "id": "tag-nhs",
+      "name": "NHS"
+    }
+  ]
+}

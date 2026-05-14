@@ -1,0 +1,622 @@
+{
+  "name": "NHS Westshire ICB — FOI Email Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "action": "read",
+        "markSeen": true,
+        "downloadAttachments": false,
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "customEmailConfig": "",
+          "forceReconnect": 900
+        }
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Read IMAP",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "credentials": {
+        "imap": {
+          "id": "imap-foi-account",
+          "name": "FOI IMAP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "IF: New Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Extract email data and generate case reference\nconst email = $input.item.json;\n\n// Generate case reference: FOI-YYYY-NNNN\nconst year = new Date().getFullYear();\nconst randomNum = Math.floor(Math.random() * 9000) + 1000;\nconst caseRef = `FOI-${year}-${randomNum}`;\n\n// Extract sender details\nconst from = email.from || '';\nconst senderEmail = from.match(/<(.+?)>/) ? from.match(/<(.+?)>/)[1] : from;\nconst senderName = from.replace(/<.+?>/, '').trim().replace(/\"/g, '') || 'Unknown';\n\n// Get received date\nconst receivedDate = new Date(email.date || new Date());\nconst receivedDateStr = receivedDate.toLocaleDateString('en-GB', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'\n});\n\n// Calculate 20-working-day deadline (skip weekends, approximate for bank holidays)\nfunction addWorkingDays(startDate, days) {\n  let count = 0;\n  let current = new Date(startDate);\n  // UK bank holidays 2025/2026 (approximate - in production, use a full list)\n  const bankHolidays = [\n    '2025-12-25', '2025-12-26', '2026-01-01', '2026-04-03', '2026-04-06',\n    '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28'\n  ];\n  while (count < days) {\n    current.setDate(current.getDate() + 1);\n    const dayOfWeek = current.getDay();\n    const dateStr = current.toISOString().split('T')[0];\n    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !bankHolidays.includes(dateStr)) {\n      count++;\n    }\n  }\n  return current;\n}\n\nconst deadlineDate = addWorkingDays(receivedDate, 20);\nconst deadlineDateStr = deadlineDate.toLocaleDateString('en-GB', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'\n});\n\n// Clean email body (remove excessive whitespace)\nconst rawBody = email.text || email.html || '';\nconst cleanBody = rawBody\n  .replace(/<[^>]+>/g, '') // Strip HTML tags\n  .replace(/\\r\\n/g, '\\n')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim()\n  .substring(0, 3000); // Limit to 3000 chars for API\n\nreturn [{\n  json: {\n    caseRef,\n    senderEmail,\n    senderName,\n    subject: email.subject || '(No subject)',\n    body: cleanBody,\n    receivedDate: receivedDate.toISOString(),\n    receivedDateStr,\n    deadlineDate: deadlineDate.toISOString(),\n    deadlineDateStr,\n    rawFrom: from\n  }\n}];"
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Code: Extract Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Build the Anthropic API payload for classification\nconst data = $input.item.json;\n\n// System prompt — FOI agent summary (hardcoded for prompt caching)\nconst systemPrompt = `You are the Freedom of Information & EIR Agent for NHS Westshire Integrated Care Board (NHS Westshire ICB).\n\nYou process all FOI, EIR, SAR, and general information rights requests received at foi@westshire.icb.nhs.uk.\n\nICB QUICK FACTS:\n- NHS Westshire ICB, Westshire House, 12 Cathedral Quarter, Westminster-upon-Avon WS1 2AB\n- Population served: 521,000 | Annual budget: £1.12 billion | Staff: 387\n- FOI Lead: Diane Okafor (Head of Corporate Affairs)\n- DPO: Andrew Kellaway\n- Established: 1 July 2022 (successor to 3 CCGs)\n\nYour task is to classify the incoming request. Respond with a valid JSON object containing:\n{\n  \"request_type\": \"FOI\" | \"EIR\" | \"SAR\" | \"GENERAL\" | \"UNCLEAR\",\n  \"classification_confidence\": \"HIGH\" | \"MEDIUM\" | \"LOW\",\n  \"summary\": \"[2-3 sentence summary of what is being requested]\",\n  \"subject_matter\": \"[single phrase describing the topic, e.g. 'staff headcount', 'contract values', 'board minutes']\",\n  \"potential_exemptions\": [\"list of potentially applicable FOIA exemptions, e.g. 's.40', 's.43'\"],\n  \"escalation_required\": true | false,\n  \"escalation_reason\": \"[reason for escalation if applicable, or null]\",\n  \"requester_type\": \"MEMBER_OF_PUBLIC\" | \"JOURNALIST\" | \"MP\" | \"ACADEMIC\" | \"BUSINESS\" | \"UNKNOWN\",\n  \"likely_held_by_icb\": true | false | \"UNCERTAIN\",\n  \"initial_notes\": \"[any other relevant observations for the FOI Lead]\"\n}\n\nIMPORTANT: Respond ONLY with the JSON object. No preamble, no explanation.`;\n\n// User message with email content\nconst userMessage = `New request received at foi@westshire.icb.nhs.uk.\n\nFrom: ${data.senderName} <${data.senderEmail}>\nSubject: ${data.subject}\nDate Received: ${data.receivedDateStr}\nCase Reference Assigned: ${data.caseRef}\n\nEmail body:\n---\n${data.body}\n---\n\nPlease classify this request.`;\n\nreturn [{\n  json: {\n    ...data,\n    apiPayload: {\n      model: 'claude-sonnet-4-6',\n      max_tokens: 1000,\n      system: [\n        {\n          type: 'text',\n          text: systemPrompt,\n          cache_control: { type: 'ephemeral' }\n        }\n      ],\n      messages: [\n        {\n          role: 'user',\n          content: userMessage\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Code: Build API Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "prompt-caching-2024-07-31"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.apiPayload) }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "HTTP Request: Claude API — Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse the classification response from Claude\nconst response = $input.item.json;\nconst prevData = $('Code: Build API Payload').item.json;\n\n// Extract text content from Anthropic response\nlet classificationText = '';\nif (response.content && response.content[0] && response.content[0].text) {\n  classificationText = response.content[0].text;\n} else {\n  throw new Error('Unexpected Anthropic API response structure: ' + JSON.stringify(response));\n}\n\n// Parse JSON from Claude's response\nlet classification;\ntry {\n  // Claude should return pure JSON, but sometimes wraps in markdown code blocks\n  const jsonMatch = classificationText.match(/```json\\s*([\\s\\S]*?)\\s*```/) ||\n                    classificationText.match(/```\\s*([\\s\\S]*?)\\s*```/);\n  const jsonStr = jsonMatch ? jsonMatch[1] : classificationText;\n  classification = JSON.parse(jsonStr.trim());\n} catch (e) {\n  // Fallback if JSON parsing fails\n  classification = {\n    request_type: 'UNCLEAR',\n    classification_confidence: 'LOW',\n    summary: 'Unable to parse classification — manual review required.',\n    subject_matter: 'unknown',\n    potential_exemptions: [],\n    escalation_required: true,\n    escalation_reason: 'Classification parsing failed — manual review required.',\n    requester_type: 'UNKNOWN',\n    likely_held_by_icb: 'UNCERTAIN',\n    initial_notes: `Raw Claude response: ${classificationText.substring(0, 500)}`\n  };\n}\n\n// Log token usage for cost monitoring\nconst usage = response.usage || {};\nconsole.log(`Token usage — Input: ${usage.input_tokens}, Output: ${usage.output_tokens}, Cache read: ${usage.cache_read_input_tokens || 0}`);\n\nreturn [{\n  json: {\n    ...prevData,\n    classification,\n    claudeUsage: usage\n  }\n}];"
+      },
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "name": "Code: Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "foi",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.request_type }}",
+                    "rightValue": "FOI",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "eir",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.request_type }}",
+                    "rightValue": "EIR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "sar",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.request_type }}",
+                    "rightValue": "SAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "general",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.request_type }}",
+                    "rightValue": "GENERAL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ],
+          "fallbackOutput": "extra"
+        },
+        "options": {}
+      },
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
+      "name": "Switch: Route by Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Build the disclosure analysis API payload\n// This incorporates the knowledge base context and requests a full draft response\nconst data = $input.item.json;\n\n// Knowledge base summary (in production, this would be loaded from the actual files)\nconst knowledgeBase = `## NHS WESTSHIRE ICB — KNOWLEDGE BASE SUMMARY\n\n### Organisation\n- NHS Westshire ICB, established 1 July 2022\n- HQ: Westshire House, 12 Cathedral Quarter, Westminster-upon-Avon WS1 2AB\n- Population: 521,000 | Budget: £1.12 billion | Staff: 387\n\n### Key Personnel\n- CEO: Sarah Thornton\n- Chair: Dr James Whitmore\n- CFO: Michael Chen\n- Chief Nursing Officer: Dr Patricia Adeyemi\n- Medical Director: Dr Robert Ashford\n- CDIO: Helen Park\n- DPO/IG Lead: Andrew Kellaway\n- FOI Lead: Diane Okafor\n\n### Provider Contracts\n- Westshire University Hospitals NHS Trust: £580m (acute)\n- Westshire Community Health NHS Trust: £142m (community)\n- Westshire Mental Health Partnership: £98m (mental health)\n- South West Ambulance: £24m (ICB share)\n- Westshire Dental Network: £18m\n\n### Workforce\n- Total: 387 WTE | Sickness absence: 4.2% (national avg: 5.7%)\n- CEO salary band: £135,000-£145,000\n- Staff on AfC Bands 2-9 and VSM arrangements\n\n### Property\n- HQ (Westshire House): 5,200 sq ft, £180,000/year\n- Chipping St Mary Satellite: 800 sq ft, £28,000/year\n\n### Published Information (s.21 candidates)\n- Annual Report and Accounts (ICB website)\n- Board meeting minutes (ICB website, within 30 days)\n- Gender Pay Gap Report (gov.uk)\n- Staff Survey results (nhsstaffsurveys.com)\n- Register of Declared Interests (ICB website)\n- Integrated Care Strategy (ICB website)\n- Contracts above £25,000 (Contracts Finder)\n- Monthly spend data above £25,000 (ICB transparency pages)\n\n### Complaints (2024/25)\n- Total: 214 | Upheld/partial: 89 (42%) | Avg resolution: 23 days | PHSO refs: 7\n\n### Primary Care Networks\n- Westminster Central PCN: 38 GPs, 28,000 patients\n- Westminster North & Brackley Vale PCN: 41 GPs, 34,000 patients\n- Chipping St Mary PCN: 29 GPs, 22,000 patients\n- Sutton Common Rural PCN: 24 GPs, 19,000 patients`;\n\nconst systemPrompt = `You are the Freedom of Information & EIR Agent for NHS Westshire ICB. You have already classified an incoming request. Now conduct a full disclosure analysis and draft the response.\n\n${knowledgeBase}\n\n## YOUR TASK\n\nAnalyse the FOI request and produce a structured JSON response containing:\n{\n  \"disclosure_decision\": \"DISCLOSE\" | \"PARTIAL\" | \"REFUSE\" | \"NOT_HELD\" | \"REFER\" | \"TRANSFER\" | \"SAR_REDIRECT\",\n  \"information_held\": \"[description of what information the ICB holds that is responsive]\",\n  \"exemptions_applied\": [\n    {\n      \"section\": \"s.40\",\n      \"description\": \"Personal data of third parties\",\n      \"type\": \"ABSOLUTE\" | \"QUALIFIED\",\n      \"public_interest_argument\": \"[PIT argument if qualified]\"\n    }\n  ],\n  \"draft_acknowledgement\": \"[Full text of acknowledgement email to send to requester — include case reference, deadline, and ICB sign-off]\",\n  \"draft_response\": \"[Full text of draft response for FOI Lead review — complete letter including disclosure or refusal notice as appropriate]\",\n  \"internal_notes\": \"[Notes for FOI Lead — risks, sensitivities, recommended approach]\",\n  \"s17_refusal_notice_required\": true | false,\n  \"pit_required\": true | false,\n  \"transfer_authority\": \"[name of authority to transfer to, if applicable]\"\n}\n\nIMPORTANT: Respond ONLY with the JSON object.`;\n\nconst requestType = data.classification.request_type;\nconst legislation = requestType === 'EIR' ? 'Environmental Information Regulations 2004' : 'Freedom of Information Act 2000';\n\nconst userMessage = `Please conduct a full disclosure analysis for this ${requestType} request.\n\nCase Reference: ${data.caseRef}\nDate Received: ${data.receivedDateStr}\nDeadline: ${data.deadlineDateStr}\nFrom: ${data.senderName} <${data.senderEmail}>\nSubject: ${data.subject}\nClassification: ${JSON.stringify(data.classification, null, 2)}\n\nRequest body:\n---\n${data.body}\n---\n\nApplicable legislation: ${legislation}\nPrepare the draft acknowledgement and draft response.`;\n\nreturn [{\n  json: {\n    ...data,\n    analysisPayload: {\n      model: 'claude-sonnet-4-6',\n      max_tokens: 4000,\n      system: [\n        {\n          type: 'text',\n          text: systemPrompt,\n          cache_control: { type: 'ephemeral' }\n        }\n      ],\n      messages: [\n        {\n          role: 'user',\n          content: userMessage\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
+      "name": "Code: Build Disclosure Analysis Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "prompt-caching-2024-07-31"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.analysisPayload) }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d0e1f2a3-b4c5-6789-defa-890123456789",
+      "name": "HTTP Request: Claude API — Analyse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2040, 180],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse the full disclosure analysis response from Claude\nconst response = $input.item.json;\nconst prevData = $('Code: Build Disclosure Analysis Payload').item.json;\n\nlet analysisText = '';\nif (response.content && response.content[0] && response.content[0].text) {\n  analysisText = response.content[0].text;\n} else {\n  throw new Error('Unexpected Anthropic API response: ' + JSON.stringify(response));\n}\n\n// Parse JSON\nlet analysis;\ntry {\n  const jsonMatch = analysisText.match(/```json\\s*([\\s\\S]*?)\\s*```/) ||\n                    analysisText.match(/```\\s*([\\s\\S]*?)\\s*```/);\n  const jsonStr = jsonMatch ? jsonMatch[1] : analysisText;\n  analysis = JSON.parse(jsonStr.trim());\n} catch (e) {\n  analysis = {\n    disclosure_decision: 'UNCLEAR',\n    information_held: 'Unable to determine — manual review required.',\n    exemptions_applied: [],\n    draft_acknowledgement: `Dear ${prevData.senderName},\\n\\nThank you for your request received on ${prevData.receivedDateStr}. This has been logged as case ${prevData.caseRef}. We will respond within 20 working days.\\n\\nFreedom of Information Team\\nNHS Westshire ICB`,\n    draft_response: 'MANUAL REVIEW REQUIRED — automated analysis failed.',\n    internal_notes: `Analysis parsing failed. Raw response: ${analysisText.substring(0, 1000)}`,\n    s17_refusal_notice_required: false,\n    pit_required: false,\n    transfer_authority: null\n  };\n}\n\nconst usage = response.usage || {};\nconsole.log(`Analysis token usage — Input: ${usage.input_tokens}, Output: ${usage.output_tokens}`);\n\nreturn [{\n  json: {\n    ...prevData,\n    analysis,\n    analysisUsage: usage\n  }\n}];"
+      },
+      "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
+      "name": "Code: Parse Draft Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 180]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "toEmail": "={{ $json.senderEmail }}",
+        "subject": "Your FOI request — Case Reference {{ $json.caseRef }} — NHS Westshire ICB",
+        "emailFormat": "text",
+        "text": "={{ $json.analysis.draft_acknowledgement }}",
+        "options": {
+          "replyTo": "foi@westshire.icb.nhs.uk"
+        }
+      },
+      "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
+      "name": "Send Acknowledgement",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [2440, 180],
+      "credentials": {
+        "smtp": {
+          "id": "nhs-smtp",
+          "name": "NHS.net SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "toEmail": "={{ $env.FOI_REVIEWER_EMAIL }}",
+        "subject": "[FOI CASE ALERT] {{ $json.caseRef }} — {{ $json.classification.request_type }}: {{ $json.classification.subject_matter }} — Deadline: {{ $json.deadlineDateStr }}",
+        "emailFormat": "text",
+        "text": "=FOI CASE ALERT — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.classification.request_type }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision }}\n\nFROM:\n{{ $json.senderName }} <{{ $json.senderEmail }}>\n\nSUBJECT:\n{{ $json.subject }}\n\nCLASSIFICATION SUMMARY:\n{{ $json.classification.summary }}\n\nESCALATION REQUIRED: {{ $json.classification.escalation_required }}\n{{ $json.classification.escalation_required ? 'ESCALATION REASON: ' + $json.classification.escalation_reason : '' }}\n\nPOTENTIAL EXEMPTIONS: {{ $json.classification.potential_exemptions.join(', ') || 'None identified' }}\n\nINFORMATION HELD:\n{{ $json.analysis.information_held }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT ACKNOWLEDGEMENT (already sent to requester):\n--------------------------------------------\n{{ $json.analysis.draft_acknowledgement }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nAction required: Please review the draft response and either approve for sending or amend as required.\nReply to this email with your decision.\n============================================\n\nThis alert was generated automatically by the NHS Westshire ICB FOI Agent.\nDo not reply to this email to send the response — use the case management system.",
+        "options": {
+          "replyTo": "foi@westshire.icb.nhs.uk"
+        }
+      },
+      "id": "a3b4c5d6-e7f8-9012-abcd-123456789012",
+      "name": "Send to Reviewer",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [2640, 180],
+      "credentials": {
+        "smtp": {
+          "id": "nhs-smtp",
+          "name": "NHS.net SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Prepare the log entry for Google Sheets\nconst data = $input.item.json;\n\nconst now = new Date();\nconst loggedAt = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});\n\nreturn [{\n  json: {\n    logEntry: [\n      data.caseRef,\n      data.receivedDateStr,\n      data.senderName,\n      data.senderEmail,\n      data.subject,\n      data.classification.request_type,\n      data.classification.subject_matter,\n      data.deadlineDateStr,\n      data.analysis.disclosure_decision,\n      data.classification.potential_exemptions.join('; ') || 'None',\n      data.classification.escalation_required ? 'YES' : 'NO',\n      data.classification.escalation_reason || '',\n      'PENDING_REVIEW',\n      loggedAt,\n      data.analysis.draft_acknowledgement.substring(0, 200) + '...'\n    ],\n    ...data\n  }\n}];"
+      },
+      "id": "b4c5d6e7-f8a9-0123-bcde-234567890123",
+      "name": "Code: Prepare Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2840, 180]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "FOI Case Register",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        }
+      },
+      "id": "c5d6e7f8-a9b0-1234-cdef-345678901234",
+      "name": "Google Sheets: Log Case",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [3040, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read IMAP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read IMAP": {
+      "main": [
+        [
+          {
+            "node": "IF: New Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: New Emails?": {
+      "main": [
+        [
+          {
+            "node": "Code: Extract Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code: Extract Email": {
+      "main": [
+        [
+          {
+            "node": "Code: Build API Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Build API Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request: Claude API — Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request: Claude API — Classify": {
+      "main": [
+        [
+          {
+            "node": "Code: Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Switch: Route by Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: Route by Type": {
+      "main": [
+        [
+          {
+            "node": "Code: Build Disclosure Analysis Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code: Build Disclosure Analysis Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code: Build Disclosure Analysis Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code: Build Disclosure Analysis Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code: Build Disclosure Analysis Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Build Disclosure Analysis Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request: Claude API — Analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request: Claude API — Analyse": {
+      "main": [
+        [
+          {
+            "node": "Code: Parse Draft Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Parse Draft Response": {
+      "main": [
+        [
+          {
+            "node": "Send Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Send to Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Prepare Log Entry": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets: Log Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Europe/London"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "westshire-icb-foi-agent"
+  },
+  "id": "foi-email-workflow-001",
+  "tags": [
+    {
+      "createdAt": "2026-05-14T09:00:00.000Z",
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "id": "tag-foi",
+      "name": "FOI"
+    },
+    {
+      "createdAt": "2026-05-14T09:00:00.000Z",
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "id": "tag-nhs",
+      "name": "NHS"
+    }
+  ]
+}
