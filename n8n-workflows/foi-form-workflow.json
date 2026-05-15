@@ -160,7 +160,7 @@
       },
       "id": "b0c1d2e3-f4a5-6789-bcde-890123456789",
       "name": "Send Confirmation to Requester",
-      "type": "n8n-nodes-base.sendEmail",
+      "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [1040, 300],
       "credentials": {
@@ -183,7 +183,7 @@
       },
       "id": "c1d2e3f4-a5b6-7890-cdef-901234567890",
       "name": "Send to Reviewer",
-      "type": "n8n-nodes-base.sendEmail",
+      "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [1240, 300],
       "credentials": {
