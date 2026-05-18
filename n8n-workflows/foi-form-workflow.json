@@ -149,47 +149,47 @@
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
-        "toEmail": "={{ $json.senderEmail }}",
+        "from": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "to": "={{ $json.senderEmail }}",
         "subject": "Your FOI request — Case Reference {{ $json.caseRef }} — NHS Westshire ICB",
-        "emailFormat": "text",
-        "text": "={{ $json.analysis.draft_acknowledgement }}",
+        "emailType": "text",
+        "message": "={{ $json.analysis.draft_acknowledgement }}",
         "options": {
           "replyTo": "foi@westshire.icb.nhs.uk"
         }
       },
       "id": "b0c1d2e3-f4a5-6789-bcde-890123456789",
       "name": "Send Confirmation to Requester",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-resend.resend",
+      "typeVersion": 1,
       "position": [1040, 300],
       "credentials": {
-        "smtp": {
-          "id": "nhs-smtp",
-          "name": "NHS.net SMTP"
+        "resendApi": {
+          "id": "resend-api",
+          "name": "Resend API"
         }
       }
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
-        "toEmail": "={{ $env.FOI_REVIEWER_EMAIL }}",
+        "from": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "to": "={{ $env.FOI_REVIEWER_EMAIL }}",
         "subject": "[FOI FORM SUBMISSION] {{ $json.caseRef }} — {{ $json.analysis.request_type || 'UNKNOWN' }}: {{ $json.analysis.subject_matter || $json.subject }} — Deadline: {{ $json.deadlineDateStr }}",
-        "emailFormat": "text",
-        "text": "=FOI WEB FORM SUBMISSION — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nSource: WEB FORM\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.analysis.request_type || 'UNCLEAR' }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision || 'PENDING' }}\n\nREQUESTER:\nName: {{ $json.senderName }}\nEmail: {{ $json.senderEmail }}\n{{ $json.organisation ? 'Organisation: ' + $json.organisation : '' }}\nPreferred format: {{ $json.preferredFormat }}\n\nREQUEST DETAILS:\n{{ $json.requestDetails }}\n\nCLASSIFICATION:\n{{ $json.analysis.summary || $json.analysis.request_type }}\n\nESCALATION REQUIRED: {{ $json.analysis.escalation_required ? 'YES' : 'NO' }}\n{{ $json.analysis.escalation_reason ? 'REASON: ' + $json.analysis.escalation_reason : '' }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nConfirmation email has been sent to requester.\n============================================",
+        "emailType": "text",
+        "message": "=FOI WEB FORM SUBMISSION — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nSource: WEB FORM\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.analysis.request_type || 'UNCLEAR' }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision || 'PENDING' }}\n\nREQUESTER:\nName: {{ $json.senderName }}\nEmail: {{ $json.senderEmail }}\n{{ $json.organisation ? 'Organisation: ' + $json.organisation : '' }}\nPreferred format: {{ $json.preferredFormat }}\n\nREQUEST DETAILS:\n{{ $json.requestDetails }}\n\nCLASSIFICATION:\n{{ $json.analysis.summary || $json.analysis.request_type }}\n\nESCALATION REQUIRED: {{ $json.analysis.escalation_required ? 'YES' : 'NO' }}\n{{ $json.analysis.escalation_reason ? 'REASON: ' + $json.analysis.escalation_reason : '' }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nConfirmation email has been sent to requester.\n============================================",
         "options": {
           "replyTo": "foi@westshire.icb.nhs.uk"
         }
       },
       "id": "c1d2e3f4-a5b6-7890-cdef-901234567890",
       "name": "Send to Reviewer",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-resend.resend",
+      "typeVersion": 1,
       "position": [1240, 300],
       "credentials": {
-        "smtp": {
-          "id": "nhs-smtp",
-          "name": "NHS.net SMTP"
+        "resendApi": {
+          "id": "resend-api",
+          "name": "Resend API"
         }
       }
     },

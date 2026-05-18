@@ -315,47 +315,47 @@
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
-        "toEmail": "={{ $json.senderEmail }}",
+        "from": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "to": "={{ $json.senderEmail }}",
         "subject": "Your FOI request — Case Reference {{ $json.caseRef }} — NHS Westshire ICB",
-        "emailFormat": "text",
-        "text": "={{ $json.analysis.draft_acknowledgement }}",
+        "emailType": "text",
+        "message": "={{ $json.analysis.draft_acknowledgement }}",
         "options": {
           "replyTo": "foi@westshire.icb.nhs.uk"
         }
       },
       "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
       "name": "Send Acknowledgement",
-      "type": "n8n-nodes-base.sendEmail",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-resend.resend",
+      "typeVersion": 1,
       "position": [2440, 180],
       "credentials": {
-        "smtp": {
-          "id": "nhs-smtp",
-          "name": "NHS.net SMTP"
+        "resendApi": {
+          "id": "resend-api",
+          "name": "Resend API"
         }
       }
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.FOI_EMAIL_ADDRESS }}",
-        "toEmail": "={{ $env.FOI_REVIEWER_EMAIL }}",
+        "from": "={{ $env.FOI_EMAIL_ADDRESS }}",
+        "to": "={{ $env.FOI_REVIEWER_EMAIL }}",
         "subject": "[FOI CASE ALERT] {{ $json.caseRef }} — {{ $json.classification.request_type }}: {{ $json.classification.subject_matter }} — Deadline: {{ $json.deadlineDateStr }}",
-        "emailFormat": "text",
-        "text": "=FOI CASE ALERT — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.classification.request_type }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision }}\n\nFROM:\n{{ $json.senderName }} <{{ $json.senderEmail }}>\n\nSUBJECT:\n{{ $json.subject }}\n\nCLASSIFICATION SUMMARY:\n{{ $json.classification.summary }}\n\nESCALATION REQUIRED: {{ $json.classification.escalation_required }}\n{{ $json.classification.escalation_required ? 'ESCALATION REASON: ' + $json.classification.escalation_reason : '' }}\n\nPOTENTIAL EXEMPTIONS: {{ $json.classification.potential_exemptions.join(', ') || 'None identified' }}\n\nINFORMATION HELD:\n{{ $json.analysis.information_held }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT ACKNOWLEDGEMENT (already sent to requester):\n--------------------------------------------\n{{ $json.analysis.draft_acknowledgement }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nAction required: Please review the draft response and either approve for sending or amend as required.\nReply to this email with your decision.\n============================================\n\nThis alert was generated automatically by the NHS Westshire ICB FOI Agent.\nDo not reply to this email to send the response — use the case management system.",
+        "emailType": "text",
+        "message": "=FOI CASE ALERT — NHS WESTSHIRE ICB\n============================================\n\nCase Reference: {{ $json.caseRef }}\nDate Received: {{ $json.receivedDateStr }}\nStatutory Deadline: {{ $json.deadlineDateStr }}\nRequest Type: {{ $json.classification.request_type }}\nDisclosure Decision (Draft): {{ $json.analysis.disclosure_decision }}\n\nFROM:\n{{ $json.senderName }} <{{ $json.senderEmail }}>\n\nSUBJECT:\n{{ $json.subject }}\n\nCLASSIFICATION SUMMARY:\n{{ $json.classification.summary }}\n\nESCALATION REQUIRED: {{ $json.classification.escalation_required }}\n{{ $json.classification.escalation_required ? 'ESCALATION REASON: ' + $json.classification.escalation_reason : '' }}\n\nPOTENTIAL EXEMPTIONS: {{ $json.classification.potential_exemptions.join(', ') || 'None identified' }}\n\nINFORMATION HELD:\n{{ $json.analysis.information_held }}\n\nINTERNAL NOTES:\n{{ $json.analysis.internal_notes }}\n\n--------------------------------------------\nDRAFT ACKNOWLEDGEMENT (already sent to requester):\n--------------------------------------------\n{{ $json.analysis.draft_acknowledgement }}\n\n--------------------------------------------\nDRAFT RESPONSE (FOR YOUR REVIEW AND APPROVAL):\n--------------------------------------------\n{{ $json.analysis.draft_response }}\n\n============================================\nAction required: Please review the draft response and either approve for sending or amend as required.\nReply to this email with your decision.\n============================================\n\nThis alert was generated automatically by the NHS Westshire ICB FOI Agent.\nDo not reply to this email to send the response — use the case management system.",
         "options": {
           "replyTo": "foi@westshire.icb.nhs.uk"
         }
       },
       "id": "a3b4c5d6-e7f8-9012-abcd-123456789012",
       "name": "Send to Reviewer",
-      "type": "n8n-nodes-base.sendEmail",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-resend.resend",
+      "typeVersion": 1,
       "position": [2640, 180],
       "credentials": {
-        "smtp": {
-          "id": "nhs-smtp",
-          "name": "NHS.net SMTP"
+        "resendApi": {
+          "id": "resend-api",
+          "name": "Resend API"
         }
       }
     },
